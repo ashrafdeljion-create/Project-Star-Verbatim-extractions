@@ -210,14 +210,9 @@ BANKING_ACRONYMS = {
 }
 
 def normalize_sentence_case(text):
-    """
-    Converts all-caps or messy text into standard sentence case (capitalizing first letter
-    of sentences and proper words) while preserving banking acronyms in full uppercase.
-    """
     if not isinstance(text, str) or not text.strip():
         return text
     
-    # Split text into sentences using basic sentence-ending punctuation
     sentences = re.split(r'([.!?]\s+)', text)
     result_sentences = []
     
@@ -248,24 +243,16 @@ def normalize_sentence_case(text):
     return ''.join(result_sentences)
 
 def proofread_text(text):
-    """
-    Corrects spelling typos, spacing, punctuation, and converts all-caps to sentence case
-    for verbatim text-capture columns only. Returns (corrected_text, was_modified).
-    """
     if not isinstance(text, str) or not text.strip():
         return text, False
     
     original = text
     corrected = text
     
-    # 1. Apply common banking / CATI typos dictionary
     for pattern, replacement in COMMON_TYPOS.items():
         corrected = re.sub(pattern, replacement, corrected, flags=re.IGNORECASE)
         
-    # 2. Convert to proper sentence case with acronym preservation
     corrected = normalize_sentence_case(corrected)
-        
-    # 3. Clean up spacing and punctuation formatting
     corrected = re.sub(r'\s+', ' ', corrected).strip()
     corrected = re.sub(r'\s+([?.!,;:])', r'\1', corrected)
     
@@ -273,17 +260,9 @@ def proofread_text(text):
     return corrected, was_modified
 
 # ==============================================================================
-# TRANSFORMATION FUNCTION
+# TRANSFORMATION FUNCTION WITH FAILSAFE CHECKS
 # ==============================================================================
 def process_growth_verbatims(df_raw, start_date=None, end_date=None, date_sep='/', column_preset='V3', enable_proofreading=False):
-    """
-    Executes the exact logic of Growth CATI W20 Verbatims V3.sps on the dataset:
-    1. Filter completed interviews (V9999 == 1)
-    2. Filter STIME dates within start_date and end_date (inclusive)
-    3. Generate all mapped fields, NPS buckets, and categorizations
-    4. Replace all commas with '~' in verbatim variables
-    5. Output the exact structure specified in SPSS V3 syntax
-    """
     df = df_raw.copy()
     
     # 1. Filter completed interviews (V9999 == 1)
@@ -376,6 +355,16 @@ def process_growth_verbatims(df_raw, start_date=None, end_date=None, date_sep='/
         if chan_2 == 1: pc = "CHANNEL ONLY"
         if prod_2 == 1 and chan_2 == 1: pc = "BOTH"
         
+        # ======================================================================
+        # FAILSAFE / ZERO-BLANK RULES AS REQUESTED
+        # ======================================================================
+        if not q13_improvement.strip():
+            q13_improvement = "Nothing"
+        if not ppp.strip():
+            ppp = "NONE"
+        if not pc.strip():
+            pc = "NONE"
+            
         tender = 'TENDER' if 'TENDER' in tq13_up else ''
         sme_smme = ''
         if 'SME' in tq13_up: sme_smme = 'SME'
@@ -502,7 +491,7 @@ def process_growth_verbatims(df_raw, start_date=None, end_date=None, date_sep='/
             r_dict['GQ14_2'] = gq14_2
             r_dict['GQ16_1'] = q16_str
             
-        # Optional Proofreading & Sentence Casing Execution (Text Capture Columns Only)
+        # Optional Proofreading Execution (Text Capture Columns Only)
         if enable_proofreading:
             for col_name in text_capture_columns:
                 if col_name in r_dict:
@@ -728,7 +717,7 @@ if selected_start_date > selected_end_date:
 # ==============================================================================
 # PROCESSING & RESULTS
 # ==============================================================================
-with st.spinner("Processing verbatim dataset & running smart sentence-casing proofreader..."):
+with st.spinner("Processing verbatim dataset & enforcing failsafe rules..."):
     df_transformed, df_audit = process_growth_verbatims(
         df_raw=df_raw,
         start_date=selected_start_date,
@@ -844,6 +833,6 @@ with dl_col4:
 st.markdown("---")
 st.markdown("""
 <div style="font-size: 0.85rem; color: #64748b; text-align: center;">
-    Growth CATI Wave 22 Automation • Built with Streamlit & Pyreadstat • Exact replication of SPSS Syntax V3 with Smart Casing Proofreader
+    Growth CATI Wave 22 Automation • Built with Streamlit & Pyreadstat • Exact replication of SPSS Syntax V3 with Failsafe & Smart Casing Proofreader
 </div>
 """, unsafe_allow_html=True)
