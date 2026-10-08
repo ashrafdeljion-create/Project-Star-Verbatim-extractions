@@ -728,44 +728,13 @@ with dl_col3:
     )
 
 # ==============================================================================
-# DATA EXPLORATION TABS
+# DATA PREVIEW SECTION (Tabs removed)
 # ==============================================================================
 st.markdown("---")
-tab1, tab2, tab3 = st.tabs(["📋 Data Preview", "🏷️ Channel Breakdown", "📈 NPS & Classifications"])
+st.markdown("### 📋 Data Preview")
 
-with tab1:
-    st.dataframe(df_transformed.head(100), use_container_width=True)
-    st.caption(f"Showing up to 100 of {len(df_transformed)} rows. Total columns: {len(df_transformed.columns)}.")
-
-with tab2:
-    ch_col1, ch_col2 = st.columns([1, 1])
-    with ch_col1:
-        st.markdown("#### Identified Channels (Frequency)")
-        chan_counts = {}
-        for c in CHAN_COL_ORDER:
-            cnt = (df_transformed[c] != '').sum()
-            chan_name = c.replace('CHAN_', '')
-            chan_counts[chan_name] = cnt
-        chan_df = pd.DataFrame(list(chan_counts.items()), columns=['Channel', 'Mentions']).sort_values(by='Mentions', ascending=False)
-        st.dataframe(chan_df, use_container_width=True, height=350)
-    with ch_col2:
-        st.markdown("#### Product vs Channel Categorization")
-        pc_counts = df_transformed['PRODUCT_CHANNEL'].value_counts(dropna=False).reset_index()
-        pc_counts.columns = ['Category', 'Count']
-        st.dataframe(pc_counts, use_container_width=True)
-
-with tab3:
-    nps_col1, nps_col2 = st.columns(2)
-    with nps_col1:
-        st.markdown("#### FNB NPS Breakdown")
-        fnb_counts = df_transformed['FNB_NPS'].value_counts(dropna=False).reset_index()
-        fnb_counts.columns = ['FNB NPS Status', 'Count']
-        st.dataframe(fnb_counts, use_container_width=True)
-    with nps_col2:
-        st.markdown("#### Product / People / Process (PPP)")
-        ppp_counts = df_transformed['PRODUCT_PEOPLE_PROCESS'].value_counts(dropna=False).reset_index()
-        ppp_counts.columns = ['PPP Classification', 'Count']
-        st.dataframe(ppp_counts, use_container_width=True)
+st.dataframe(df_transformed.head(100), use_container_width=True)
+st.caption(f"Showing up to 100 of {len(df_transformed)} rows. Total columns: {len(df_transformed.columns)}.")
 
 # Footer info
 st.markdown("---")
