@@ -191,7 +191,7 @@ CHAN_COL_ORDER = [
 ]
 
 # ==============================================================================
-# PROOFREADING & SPELL/GRAMMAR CORRECTION ENGINE (TEXT CAPTURE COLUMNS ONLY)
+# PROOFREADING, TYPO FIXING & SMART SENTENCE-CASING ENGINE
 # ==============================================================================
 COMMON_TYPOS = {
     r'\bDEACREASE\b': 'DECREASE',
@@ -203,10 +203,54 @@ COMMON_TYPOS = {
     r'\bINCOMET\b': 'INCOME',
 }
 
+BANKING_ACRONYMS = {
+    'fnb', 'atm', 'atms', 'otp', 'otps', 'sme', 'smes', 'smme', 'smmes',
+    'absa', 'fica', 'vaf', 'uif', 'forex', 'covid', 'e-bucks', 'ebucks',
+    'bm', 'rm', 'id', 'pin', 'app', 'apps', 'fnbapp', 'cib', 'wesbank'
+}
+
+def normalize_sentence_case(text):
+    """
+    Converts all-caps or messy text into standard sentence case (capitalizing first letter
+    of sentences and proper words) while preserving banking acronyms in full uppercase.
+    """
+    if not isinstance(text, str) or not text.strip():
+        return text
+    
+    # Split text into sentences using basic sentence-ending punctuation
+    sentences = re.split(r'([.!?]\s+)', text)
+    result_sentences = []
+    
+    for i in range(0, len(sentences), 2):
+        sent = sentences[i]
+        punct = sentences[i+1] if i+1 < len(sentences) else ''
+        
+        if not sent.strip():
+            result_sentences.append(sent + punct)
+            continue
+            
+        words = sent.strip().split()
+        processed_words = []
+        
+        for idx, word in enumerate(words):
+            clean_word = re.sub(r'[^a-zA-Z-]', '', word)
+            if clean_word.lower() in BANKING_ACRONYMS:
+                word_fixed = word.upper()
+            else:
+                if idx == 0:
+                    word_fixed = word.capitalize()
+                else:
+                    word_fixed = word.lower()
+            processed_words.append(word_fixed)
+            
+        result_sentences.append(' '.join(processed_words) + punct)
+        
+    return ''.join(result_sentences)
+
 def proofread_text(text):
     """
-    Corrects spelling, grammar formatting, spacing, and typos in verbatim text.
-    Returns (corrected_text, was_modified).
+    Corrects spelling typos, spacing, punctuation, and converts all-caps to sentence case
+    for verbatim text-capture columns only. Returns (corrected_text, was_modified).
     """
     if not isinstance(text, str) or not text.strip():
         return text, False
@@ -214,9 +258,14 @@ def proofread_text(text):
     original = text
     corrected = text
     
+    # 1. Apply common banking / CATI typos dictionary
     for pattern, replacement in COMMON_TYPOS.items():
         corrected = re.sub(pattern, replacement, corrected, flags=re.IGNORECASE)
         
+    # 2. Convert to proper sentence case with acronym preservation
+    corrected = normalize_sentence_case(corrected)
+        
+    # 3. Clean up spacing and punctuation formatting
     corrected = re.sub(r'\s+', ' ', corrected).strip()
     corrected = re.sub(r'\s+([?.!,;:])', r'\1', corrected)
     
@@ -260,7 +309,6 @@ def process_growth_verbatims(df_raw, start_date=None, end_date=None, date_sep='/
     rows = []
     audit_logs = []
     
-    # Explicit definition of text capture columns to proofread
     text_capture_columns = ['Q13_IMPROVEMENT', 'Q16A', 'Q16_2', 'Q16_1_H', 'GQ14_1', 'GQ14_2', 'Q14_1', 'Q14_2']
     
     for _, row in df.iterrows():
@@ -454,7 +502,7 @@ def process_growth_verbatims(df_raw, start_date=None, end_date=None, date_sep='/
             r_dict['GQ14_2'] = gq14_2
             r_dict['GQ16_1'] = q16_str
             
-        # Optional Proofreading Execution (Strictly targeting text capture columns only)
+        # Optional Proofreading & Sentence Casing Execution (Text Capture Columns Only)
         if enable_proofreading:
             for col_name in text_capture_columns:
                 if col_name in r_dict:
@@ -536,11 +584,11 @@ with st.sidebar:
             use_local_file = True
             
     st.markdown("---")
-    st.subheader("AI Proofreading & Correction")
+    st.subheader("AI Proofreading & Casing")
     enable_proofreading = st.checkbox(
-        "Auto-correct spelling & grammar typos",
+        "Smart sentence casing & typo correction",
         value=True,
-        help="Automatically detects and corrects common spelling mistakes, double spaces, and formatting in verbatim text-capture columns only."
+        help="Converts ALL-CAPS text to normal sentence case, corrects typos, and preserves acronyms (FNB, ATM, SME, etc.) in text-capture columns only."
     )
     
     st.markdown("---")
@@ -680,7 +728,7 @@ if selected_start_date > selected_end_date:
 # ==============================================================================
 # PROCESSING & RESULTS
 # ==============================================================================
-with st.spinner("Processing verbatim dataset & running text-capture proofreading rules..."):
+with st.spinner("Processing verbatim dataset & running smart sentence-casing proofreader..."):
     df_transformed, df_audit = process_growth_verbatims(
         df_raw=df_raw,
         start_date=selected_start_date,
@@ -693,7 +741,7 @@ with st.spinner("Processing verbatim dataset & running text-capture proofreading
 st.write("")
 st.success(f"✅ Filtered and transformed **{len(df_transformed):,}** completed interviews between **{selected_start_date}** and **{selected_end_date}**.")
 if enable_proofreading and not df_audit.empty:
-    st.info(f"✨ Proofreading engine automatically corrected **{len(df_audit):,}** spelling/grammar instances across verbatim text-capture columns.")
+    st.info(f"✨ Proofreading engine successfully normalized casing & corrected **{len(df_audit):,}** instances across text-capture columns.")
 
 if df_transformed.empty:
     st.warning("No records matched the selected date range and completion criteria. Please broaden the dates.")
@@ -796,6 +844,6 @@ with dl_col4:
 st.markdown("---")
 st.markdown("""
 <div style="font-size: 0.85rem; color: #64748b; text-align: center;">
-    Growth CATI Wave 22 Automation • Built with Streamlit & Pyreadstat • Exact replication of SPSS Syntax V3 with Text-Capture Proofreader
+    Growth CATI Wave 22 Automation • Built with Streamlit & Pyreadstat • Exact replication of SPSS Syntax V3 with Smart Casing Proofreader
 </div>
 """, unsafe_allow_html=True)
