@@ -229,10 +229,17 @@ def proofread_text(text):
     was_modified = (original != corrected)
     return corrected, was_modified
 
+def clean_team_name(team_str):
+    if not isinstance(team_str, str) or not team_str.strip():
+        return team_str
+    # Removes leading digits and colon (e.g., "0170:MBIZANA" -> "MBIZANA")
+    cleaned = re.sub(r'^\d+[:\-]\s*', '', team_str.strip())
+    return cleaned
+
 # ==============================================================================
 # TRANSFORMATION FUNCTION WITH FAILSAFE CHECKS
 # ==============================================================================
-def process_verbatims(df_raw, start_date=None, end_date=None, date_sep='/', column_preset='V3', enable_proofreading=False):
+def process_verbatims(df_raw, start_date=None, end_date=None, date_sep='/', column_preset='V3', enable_proofreading=False, is_pubsc=False):
     df = df_raw.copy()
     
     if 'V9999' in df.columns:
@@ -375,15 +382,22 @@ def process_verbatims(df_raw, start_date=None, end_date=None, date_sep='/', colu
             v = row.get(c, '')
             return str(v).strip() if pd.notna(v) else ''
             
+        raw_team = sval('V8018')
+        cleaned_team = clean_team_name(raw_team)
+        
+        # Swapping Sub-Region source specifically for PUBSC
+        sub_reg_val = sval('V44011') if is_pubsc else sval('V13290')
+        seg_val = sval('V13290') if is_pubsc else sval('V44011')
+        
         r_dict = {
             'RUID': ruid_val,
             'RECORDED_DATE': rec_date,
             'AGRIC_IND': sval('V66012'),
             'ISLAMIC_IND': sval('V66013'),
             'REGION': sval('V12290'),
-            'SUB_REGION': sval('V13290'),
-            'SEGMENT': sval('V44011'),
-            'TEAM': sval('V8018'),
+            'SUB_REGION': sub_reg_val,
+            'SEGMENT': seg_val,
+            'TEAM': cleaned_team,
             'BM_NPS': bm_nps,
             'FNB_NPS': fnb_nps,
             'Q13_IMPROVEMENT': q13_improvement,
@@ -539,7 +553,7 @@ tab_growth, tab_enterprise, tab_pubsc = st.tabs([
     "🏛️ Public Sector / PUBSC"
 ])
 
-def render_processing_section(section_name, prefix_key):
+def render_processing_section(section_name, prefix_key, is_pubsc=False):
     st.markdown(f"### Upload and Process: **{section_name}**")
     
     uploaded_file = st.file_uploader(
@@ -639,7 +653,8 @@ def render_processing_section(section_name, prefix_key):
             end_date=e_date,
             date_sep=date_separator,
             column_preset=column_preset,
-            enable_proofreading=enable_proofreading
+            enable_proofreading=enable_proofreading,
+            is_pubsc=is_pubsc
         )
         
     st.success(f"✅ Processed **{len(df_transformed):,}** completed interviews for **{section_name}**.")
@@ -707,13 +722,13 @@ def render_processing_section(section_name, prefix_key):
             st.download_button("📝 Audit Log", data=audit_bytes, file_name=f"{slug}_Audit_{date_str_file}.csv", mime="text/csv", use_container_width=True, key=f"dl_audit_{prefix_key}")
 
 with tab_growth:
-    render_processing_section("Growth / Business", "Growth")
+    render_processing_section("Growth / Business", "Growth", is_pubsc=False)
 
 with tab_enterprise:
-    render_processing_section("R10Mil / Enterprise", "Enterprise")
+    render_processing_section("R10Mil / Enterprise", "Enterprise", is_pubsc=False)
 
 with tab_pubsc:
-    render_processing_section("Public Sector / PUBSC", "PUBSC")
+    render_processing_section("Public Sector / PUBSC", "PUBSC", is_pubsc=True)
 
 st.markdown("---")
 st.markdown("""
