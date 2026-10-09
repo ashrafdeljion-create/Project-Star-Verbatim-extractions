@@ -505,7 +505,7 @@ def process_verbatims(df_raw, start_date=None, end_date=None, date_sep='/', colu
 # UI HEADER & GLOBAL CONFIGURATION
 # ==============================================================================
 st.title("📊 CATI Verbatim Processor Suite")
-st.markdown("Automated processing pipeline reproducing SPSS syntax for raw `.sav` datasets across **Growth / Business** and **R10Mil / Enterprise**.")
+st.markdown("Automated processing pipeline reproducing SPSS syntax for raw `.sav` datasets across **Growth / Business**, **R10Mil / Enterprise**, and **Public Sector / PUBSC**.")
 
 with st.sidebar:
     st.header("⚙️ Global Settings")
@@ -531,9 +531,13 @@ with st.sidebar:
     )
 
 # ==============================================================================
-# MULTI-SECTION TABS (GROWTH VS R10MIL / ENTERPRISE)
+# MULTI-SECTION TABS (GROWTH, ENTERPRISE, PUBSC)
 # ==============================================================================
-tab_growth, tab_enterprise = st.tabs(["📊 Growth / Business", "🏢 R10Mil / Enterprise"])
+tab_growth, tab_enterprise, tab_pubsc = st.tabs([
+    "📊 Growth / Business", 
+    "🏢 R10Mil / Enterprise", 
+    "🏛️ Public Sector / PUBSC"
+])
 
 def render_processing_section(section_name, prefix_key):
     st.markdown(f"### Upload and Process: **{section_name}**")
@@ -707,6 +711,9 @@ with tab_growth:
 
 with tab_enterprise:
     render_processing_section("R10Mil / Enterprise", "Enterprise")
+
+with tab_pubsc:
+    render_processing_section("Public Sector / PUBSC", "PUBSC")
 
 st.markdown("---")
 st.markdown("""
