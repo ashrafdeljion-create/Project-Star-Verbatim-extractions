@@ -12,16 +12,14 @@ import streamlit as st
 # PAGE CONFIGURATION & STYLING
 # ==============================================================================
 st.set_page_config(
-    page_title="Growth CATI Verbatim Processor",
+    page_title="CATI Verbatim Processor Suite",
     page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Custom sleek UI CSS matching modern dark dashboard aesthetic
 st.markdown("""
 <style>
-    /* Metric Cards */
     .metric-container {
         background-color: #1a1e24;
         border-radius: 10px;
@@ -40,39 +38,11 @@ st.markdown("""
         text-transform: uppercase;
         letter-spacing: 0.05em;
     }
-    
-    /* Date Selection Box Highlight */
-    .date-card {
-        background: linear-gradient(145deg, #161b22, #0d1117);
-        border: 1px solid #30363d;
-        border-radius: 10px;
-        padding: 16px;
-        margin-bottom: 20px;
-    }
-    
-    /* Custom alerts and tags */
-    .status-badge {
-        display: inline-block;
-        padding: 4px 10px;
-        border-radius: 6px;
-        font-size: 0.8rem;
-        font-weight: 600;
-    }
-    .badge-success {
-        background-color: rgba(16, 185, 129, 0.2);
-        color: #34d399;
-        border: 1px solid rgba(16, 185, 129, 0.3);
-    }
-    .badge-info {
-        background-color: rgba(59, 130, 246, 0.2);
-        color: #60a5fa;
-        border: 1px solid rgba(59, 130, 246, 0.3);
-    }
 </style>
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# EMBEDDED SPSS RULES & KEYWORDS (Extracted from "Growth CATI W20 Verbatims V3.sps")
+# EMBEDDED SPSS RULES & KEYWORDS
 # ==============================================================================
 PEOPLE_KEYWORDS = [
     'ATTENDING', 'ATTEND ', 'BANKER', 'BANKERS', 'BM', 'BM/RM', "BM'S", "BM'S/RM'S",
@@ -262,14 +232,12 @@ def proofread_text(text):
 # ==============================================================================
 # TRANSFORMATION FUNCTION WITH FAILSAFE CHECKS
 # ==============================================================================
-def process_growth_verbatims(df_raw, start_date=None, end_date=None, date_sep='/', column_preset='V3', enable_proofreading=False):
+def process_verbatims(df_raw, start_date=None, end_date=None, date_sep='/', column_preset='V3', enable_proofreading=False):
     df = df_raw.copy()
     
-    # 1. Filter completed interviews (V9999 == 1)
     if 'V9999' in df.columns:
         df = df[df['V9999'].astype(str).str.strip().isin(['1', '1.0'])].copy()
     
-    # 2. Date filtering via STIME
     if 'STIME' in df.columns:
         df['STIME_STR'] = df['STIME'].astype(str).str.strip().str[:8]
         if start_date:
@@ -279,7 +247,6 @@ def process_growth_verbatims(df_raw, start_date=None, end_date=None, date_sep='/
             e_str = end_date.strftime('%Y%m%d') if isinstance(end_date, (datetime, date)) else str(end_date).replace('-', '').replace('/', '')[:8]
             df = df[df['STIME_STR'] <= e_str]
             
-    # Sort cases by INTNR (A) as per SPSS line 909
     if 'INTNR' in df.columns:
         df = df.sort_values(by='INTNR').reset_index(drop=True)
     else:
@@ -300,7 +267,6 @@ def process_growth_verbatims(df_raw, start_date=None, end_date=None, date_sep='/
         nday = stime[6:8] if len(stime) >= 8 else ''
         rec_date = f"{nyear}{date_sep}{nmonth}{date_sep}{nday}" if (nyear and nmonth and nday) else ''
         
-        # NPS Buckets
         q14_1_val = row.get('Q14_1', np.nan)
         fnb_nps = ''
         if pd.notna(q14_1_val):
@@ -324,10 +290,8 @@ def process_growth_verbatims(df_raw, start_date=None, end_date=None, date_sep='/
         tq13_raw = str(row.get('TQ13_OPEN', '')) if pd.notna(row.get('TQ13_OPEN', '')) else ''
         tq13_up = tq13_raw.upper()
         
-        # Q13_IMPROVEMENT with comma replacement
         q13_improvement = tq13_raw.replace(',', '~')
         
-        # Categorization Flags
         people_1 = 1 if any(kw in tq13_up for kw in PEOPLE_KEYWORDS) else 0
         process_1 = 1 if any(kw in tq13_up for kw in PROCESS_KEYWORDS) else 0
         prod_1 = 1 if any(kw in tq13_up for kw in PRODUCT1_KEYWORDS) else 0
@@ -335,10 +299,8 @@ def process_growth_verbatims(df_raw, start_date=None, end_date=None, date_sep='/
         chan_2 = 1 if any(kw in tq13_up for kw in CHANNEL2_KEYWORDS) else 0
         has_none = any(kw in tq13_up for kw in NONE_KEYWORDS)
         
-        # PRODUCT_PEOPLE_PROCESS
         ppp = ''
-        if has_none:
-            ppp = "NONE"
+        if has_none: ppp = "NONE"
         if people_1 == 1: ppp = "PEOPLE ONLY"
         if process_1 == 1: ppp = "PROCESS ONLY"
         if prod_1 == 1: ppp = "PRODUCT ONLY"
@@ -347,17 +309,13 @@ def process_growth_verbatims(df_raw, start_date=None, end_date=None, date_sep='/
         if prod_1 == 1 and process_1 == 1: ppp = "PRODUCT & PROCESS"
         if people_1 == 1 and process_1 == 1 and prod_1 == 1: ppp = "ALL"
         
-        # PRODUCT_CHANNEL
         pc = ''
-        if has_none:
-            pc = "NONE"
+        if has_none: pc = "NONE"
         if prod_2 == 1: pc = "PRODUCT ONLY"
         if chan_2 == 1: pc = "CHANNEL ONLY"
         if prod_2 == 1 and chan_2 == 1: pc = "BOTH"
         
-        # ======================================================================
-        # FAILSAFE / ZERO-BLANK RULES AS REQUESTED
-        # ======================================================================
+        # FAILSAFE / ZERO-BLANK RULES
         if not q13_improvement.strip():
             q13_improvement = "Nothing"
         if not ppp.strip():
@@ -370,7 +328,6 @@ def process_growth_verbatims(df_raw, start_date=None, end_date=None, date_sep='/
         if 'SME' in tq13_up: sme_smme = 'SME'
         if 'SMME' in tq13_up: sme_smme = 'SMME'
         
-        # Channel fields
         chan_dict = {}
         for cvar, rule_tuples in CHANNEL_RULES.items():
             assigned = ''
@@ -382,7 +339,6 @@ def process_growth_verbatims(df_raw, start_date=None, end_date=None, date_sep='/
         active_chans = [chan_dict[c] for c in CHAN_COL_ORDER if chan_dict[c]]
         channels_str = "~".join(active_chans)
         
-        # Open-ended responses
         tq14_1_open = str(row.get('TQ14_1_OPEN', '')) if pd.notna(row.get('TQ14_1_OPEN', '')) else ''
         tq14_2_open = str(row.get('TQ14_2_OPEN', '')) if pd.notna(row.get('TQ14_2_OPEN', '')) else ''
         tq16_open = str(row.get('TQ16_OPEN', '')) if pd.notna(row.get('TQ16_OPEN', '')) else ''
@@ -480,18 +436,16 @@ def process_growth_verbatims(df_raw, start_date=None, end_date=None, date_sep='/
             'CHAN_INSTANTACC': chan_dict['CHAN_INSTANTACC']
         }
         
-        # Handle column naming variations between V3 syntax and Legacy/Client CSV
         if column_preset == 'Legacy/Client CSV':
             r_dict['SOLOPRENEUR'] = ''
             r_dict['Q14_1'] = gq14_1
             r_dict['Q14_2'] = gq14_2
             r_dict['Q16'] = q16_str
-        else: # 'V3'
+        else:
             r_dict['GQ14_1'] = gq14_1
             r_dict['GQ14_2'] = gq14_2
             r_dict['GQ16_1'] = q16_str
             
-        # Optional Proofreading Execution (Text Capture Columns Only)
         if enable_proofreading:
             for col_name in text_capture_columns:
                 if col_name in r_dict:
@@ -512,7 +466,6 @@ def process_growth_verbatims(df_raw, start_date=None, end_date=None, date_sep='/
     df_out = pd.DataFrame(rows)
     df_audit = pd.DataFrame(audit_logs)
     
-    # Reorder columns to match exact dictionary order
     if column_preset == 'Legacy/Client CSV':
         col_order = [
             'RUID', 'RECORDED_DATE', 'AGRIC_IND', 'ISLAMIC_IND', 'REGION', 'SUB_REGION',
@@ -549,31 +502,13 @@ def process_growth_verbatims(df_raw, start_date=None, end_date=None, date_sep='/
 
 
 # ==============================================================================
-# STREAMLIT UI
+# UI HEADER & GLOBAL CONFIGURATION
 # ==============================================================================
-st.title("Growth CATI Verbatim Processor")
-st.markdown("Automated processing pipeline reproducing SPSS syntax `Growth CATI W20 Verbatims V3.sps` for raw `.sav` datasets.")
+st.title("📊 CATI Verbatim Processor Suite")
+st.markdown("Automated processing pipeline reproducing SPSS syntax for raw `.sav` datasets across **Growth / Business** and **R10Mil / Enterprise**.")
 
-# Sidebar Configuration
 with st.sidebar:
-    st.header("⚙️ Configuration")
-    
-    # File uploader
-    uploaded_file = st.file_uploader(
-        "Upload Raw SPSS File (.sav)",
-        type=["sav"],
-        help="Upload the raw CATI data file (e.g., GROW626.SAV)"
-    )
-    
-    # Local fallback option if file exists on disk
-    local_default_path = r"c:\PROJECTS\2026\Pr. Star\Wave 22\Automated All process\Verbatim data\Growth\GROW626.SAV"
-    use_local_file = False
-    if os.path.exists(local_default_path) and uploaded_file is None:
-        if st.checkbox("Use local file GROW626.SAV (testing)", value=True):
-            use_local_file = True
-            
-    st.markdown("---")
-    st.subheader("AI Proofreading & Casing")
+    st.header("⚙️ Global Settings")
     enable_proofreading = st.checkbox(
         "Smart sentence casing & typo correction",
         value=True,
@@ -581,7 +516,6 @@ with st.sidebar:
     )
     
     st.markdown("---")
-    st.subheader("Formatting Options")
     column_preset = st.radio(
         "Output Column Preset",
         ["Legacy/Client CSV", "V3 (SPSS Syntax)"],
@@ -593,246 +527,190 @@ with st.sidebar:
         "Date Delimiter in Output",
         ["/", "-"],
         index=0,
-        help="'/' produces 2026/10/01 (client standard); '-' produces 2026-10-01 (ISO standard)."
+        help="'/' produces 2026/10/01; '-' produces 2026-10-01."
     )
 
-# Data Loading Routine
-df_raw = None
-meta = None
-
-if uploaded_file is not None:
-    with st.spinner("Reading uploaded SPSS file..."):
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".sav") as tmp:
-            tmp.write(uploaded_file.getbuffer())
-            tmp_path = tmp.name
-        try:
-            df_raw, meta = pyreadstat.read_sav(tmp_path)
-            st.sidebar.success(f"Loaded: {uploaded_file.name}")
-        except Exception as e:
-            st.error(f"Error loading uploaded .sav file: {e}")
-        finally:
-            if os.path.exists(tmp_path):
-                os.remove(tmp_path)
-
-elif use_local_file and os.path.exists(local_default_path):
-    with st.spinner("Loading local file GROW626.SAV..."):
-        df_raw, meta = pyreadstat.read_sav(local_default_path)
-        st.sidebar.info("Using local GROW626.SAV")
-
-# If no data loaded yet
-if df_raw is None:
-    st.info("👆 Please upload a raw `.sav` file in the sidebar to begin processing.")
-    st.stop()
-
 # ==============================================================================
-# DATA INSPECTION & DATE RANGE DISCOVERY
+# MULTI-SECTION TABS (GROWTH VS R10MIL / ENTERPRISE)
 # ==============================================================================
-total_records = len(df_raw)
-completed_records = 0
-if 'V9999' in df_raw.columns:
-    completed_mask = df_raw['V9999'].astype(str).str.strip().isin(['1', '1.0'])
-    completed_records = int(completed_mask.sum())
-else:
-    completed_records = total_records
+tab_growth, tab_enterprise = st.tabs(["📊 Growth / Business", "🏢 R10Mil / Enterprise"])
 
-valid_dates = []
-if 'STIME' in df_raw.columns:
-    stime_dates = df_raw.loc[completed_mask, 'STIME'].dropna().astype(str).str.strip().str[:8]
-    for d_str in stime_dates.unique():
-        if len(d_str) == 8 and d_str.isdigit():
+def render_processing_section(section_name, prefix_key):
+    st.markdown(f"### Upload and Process: **{section_name}**")
+    
+    uploaded_file = st.file_uploader(
+        f"Upload Raw SPSS File (.sav) for {section_name}",
+        type=["sav"],
+        key=f"uploader_{prefix_key}"
+    )
+    
+    df_raw = None
+    if uploaded_file is not None:
+        with st.spinner(f"Reading SPSS file for {section_name}..."):
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".sav") as tmp:
+                tmp.write(uploaded_file.getbuffer())
+                tmp_path = tmp.name
             try:
-                valid_dates.append(datetime.strptime(d_str, '%Y%m%d').date())
-            except: pass
-    if valid_dates:
-        valid_dates.sort()
-        min_date, max_date = valid_dates[0], valid_dates[-1]
+                df_raw, meta = pyreadstat.read_sav(tmp_path)
+                st.success(f"Successfully loaded {uploaded_file.name}")
+            except Exception as e:
+                st.error(f"Error loading SPSS file: {e}")
+            finally:
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+                    
+    if df_raw is None:
+        st.info(f"👆 Please upload a raw `.sav` dataset above to begin processing **{section_name}**.")
+        return
+        
+    total_records = len(df_raw)
+    completed_mask = pd.Series([True] * total_records)
+    if 'V9999' in df_raw.columns:
+        completed_mask = df_raw['V9999'].astype(str).str.strip().isin(['1', '1.0'])
+    completed_records = int(completed_mask.sum())
+    
+    valid_dates = []
+    if 'STIME' in df_raw.columns:
+        stime_dates = df_raw.loc[completed_mask, 'STIME'].dropna().astype(str).str.strip().str[:8]
+        for d_str in stime_dates.unique():
+            if len(d_str) == 8 and d_str.isdigit():
+                try:
+                    valid_dates.append(datetime.strptime(d_str, '%Y%m%d').date())
+                except: pass
+        if valid_dates:
+            valid_dates.sort()
+            min_date, max_date = valid_dates[0], valid_dates[-1]
+        else:
+            min_date = max_date = date.today()
     else:
         min_date = max_date = date.today()
-else:
-    min_date = max_date = date.today()
-
-# Display summary metrics
-m_col1, m_col2, m_col3, m_col4 = st.columns(4)
-with m_col1:
-    st.markdown(f"""
-    <div class="metric-container">
-        <div class="metric-label">Total Records</div>
-        <div class="metric-value">{total_records:,}</div>
-    </div>
-    """, unsafe_allow_html=True)
-with m_col2:
-    st.markdown(f"""
-    <div class="metric-container">
-        <div class="metric-label">Completed (V9999=1)</div>
-        <div class="metric-value">{completed_records:,}</div>
-    </div>
-    """, unsafe_allow_html=True)
-with m_col3:
-    st.markdown(f"""
-    <div class="metric-container">
-        <div class="metric-label">Earliest Date</div>
-        <div class="metric-value" style="font-size: 1.3rem;">{min_date.strftime('%Y-%m-%d')}</div>
-    </div>
-    """, unsafe_allow_html=True)
-with m_col4:
-    st.markdown(f"""
-    <div class="metric-container">
-        <div class="metric-label">Latest Date</div>
-        <div class="metric-value" style="font-size: 1.3rem;">{max_date.strftime('%Y-%m-%d')}</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-st.write("")
-
-# ==============================================================================
-# DATE SELECTION UI
-# ==============================================================================
-st.markdown("### 📅 Session Date Filter")
-st.markdown("Select the start and end date of the interview data you want to extract for this session:")
-
-date_col1, date_col2 = st.columns(2)
-with date_col1:
-    selected_start_date = st.date_input("Start Date", value=min_date, min_value=min_date, max_value=max_date, key="start_date_picker")
-with date_col2:
-    selected_end_date = st.date_input("End Date", value=max_date, min_value=min_date, max_value=max_date, key="end_date_picker")
-
-preset_cols = st.columns([1, 1, 1, 1, 2])
-with preset_cols[0]:
-    if st.button("All Dates", use_container_width=True):
-        selected_start_date, selected_end_date = min_date, max_date
-with preset_cols[1]:
-    if st.button("Last 7 Days", use_container_width=True):
-        selected_start_date, selected_end_date = max(min_date, max_date - pd.Timedelta(days=7)), max_date
-with preset_cols[2]:
-    if st.button("Last 14 Days", use_container_width=True):
-        selected_start_date, selected_end_date = max(min_date, max_date - pd.Timedelta(days=14)), max_date
-with preset_cols[3]:
-    if st.button("Most Recent Day", use_container_width=True):
-        selected_start_date = selected_end_date = max_date
-
-if selected_start_date > selected_end_date:
-    st.error("⚠️ Start Date cannot be after End Date.")
-    st.stop()
-
-# ==============================================================================
-# PROCESSING & RESULTS
-# ==============================================================================
-with st.spinner("Processing verbatim dataset & enforcing failsafe rules..."):
-    df_transformed, df_audit = process_growth_verbatims(
-        df_raw=df_raw,
-        start_date=selected_start_date,
-        end_date=selected_end_date,
-        date_sep=date_separator,
-        column_preset=column_preset,
-        enable_proofreading=enable_proofreading
+        
+    # Metrics
+    mc1, mc2, mc3, mc4 = st.columns(4)
+    with mc1:
+        st.markdown(f"""
+        <div class="metric-container">
+            <div class="metric-label">Total Records</div>
+            <div class="metric-value">{total_records:,}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with mc2:
+        st.markdown(f"""
+        <div class="metric-container">
+            <div class="metric-label">Completed (V9999=1)</div>
+            <div class="metric-value">{completed_records:,}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with mc3:
+        st.markdown(f"""
+        <div class="metric-container">
+            <div class="metric-label">Earliest Date</div>
+            <div class="metric-value" style="font-size: 1.3rem;">{min_date.strftime('%Y-%m-%d')}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with mc4:
+        st.markdown(f"""
+        <div class="metric-container">
+            <div class="metric-label">Latest Date</div>
+            <div class="metric-value" style="font-size: 1.3rem;">{max_date.strftime('%Y-%m-%d')}</div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+    st.write("")
+    st.markdown("#### 📅 Date Filter Selection")
+    dc1, dc2 = st.columns(2)
+    with dc1:
+        s_date = st.date_input("Start Date", value=min_date, min_value=min_date, max_value=max_date, key=f"start_{prefix_key}")
+    with dc2:
+        e_date = st.date_input("End Date", value=max_date, min_value=min_date, max_value=max_date, key=f"end_{prefix_key}")
+        
+    if s_date > e_date:
+        st.error("⚠️ Start Date cannot be after End Date.")
+        return
+        
+    with st.spinner(f"Running verbatim processing & failsafes for {section_name}..."):
+        df_transformed, df_audit = process_verbatims(
+            df_raw=df_raw,
+            start_date=s_date,
+            end_date=e_date,
+            date_sep=date_separator,
+            column_preset=column_preset,
+            enable_proofreading=enable_proofreading
+        )
+        
+    st.success(f"✅ Processed **{len(df_transformed):,}** completed interviews for **{section_name}**.")
+    if enable_proofreading and not df_audit.empty:
+        st.info(f"✨ Normalized casing and corrected **{len(df_audit):,}** instances.")
+        
+    if df_transformed.empty:
+        st.warning("No records matched the selected date range.")
+        return
+        
+    st.markdown("---")
+    st.markdown(f"#### ✏️ Interactive Review & Edit ({section_name})")
+    edited_df = st.data_editor(
+        df_transformed,
+        num_rows="fixed",
+        use_container_width=True,
+        height=380,
+        key=f"editor_{prefix_key}"
     )
-
-st.write("")
-st.success(f"✅ Filtered and transformed **{len(df_transformed):,}** completed interviews between **{selected_start_date}** and **{selected_end_date}**.")
-if enable_proofreading and not df_audit.empty:
-    st.info(f"✨ Proofreading engine successfully normalized casing & corrected **{len(df_audit):,}** instances across text-capture columns.")
-
-if df_transformed.empty:
-    st.warning("No records matched the selected date range and completion criteria. Please broaden the dates.")
-    st.stop()
-
-# ==============================================================================
-# USER SELF-EDIT SECTION (INTERACTIVE DATA EDITOR)
-# ==============================================================================
-st.markdown("---")
-st.markdown("### ✏️ Interactive Review & Self-Edit Console")
-st.markdown("You can review and manually edit any text directly in the table below. Any changes you make will be preserved in your downloaded exports.")
-
-edited_df = st.data_editor(
-    df_transformed,
-    num_rows="fixed",
-    use_container_width=True,
-    height=400,
-    key="user_text_editor"
-)
-
-# ==============================================================================
-# DOWNLOAD HUB
-# ==============================================================================
-st.markdown("---")
-st.markdown("### 📥 Download Processed Files & Audit Logs")
-
-date_str_file = selected_end_date.strftime("%Y_%m_%d")
-csv_filename = f"Growth_Verbatims_Wave22_{date_str_file}.csv"
-sav_filename = f"Growth_Verbatims_Wave22_{date_str_file}.sav"
-xlsx_filename = f"Growth_Verbatims_Wave22_{date_str_file}.xlsx"
-audit_filename = f"Growth_Verbatims_AuditLog_{date_str_file}.csv"
-
-csv_buffer = io.StringIO()
-edited_df.to_csv(csv_buffer, sep='|', index=False, encoding='utf-8')
-csv_bytes = csv_buffer.getvalue().encode('utf-8')
-
-sav_bytes = b""
-with tempfile.NamedTemporaryFile(delete=False, suffix=".sav") as tmp_sav:
-    tmp_sav_path = tmp_sav.name
-try:
-    pyreadstat.write_sav(edited_df, tmp_sav_path)
-    with open(tmp_sav_path, "rb") as fp:
-        sav_bytes = fp.read()
-except Exception as e:
-    st.warning(f"Could not generate .sav file: {e}")
-finally:
-    if os.path.exists(tmp_sav_path):
-        os.remove(tmp_sav_path)
-
-excel_buffer = io.BytesIO()
-with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
-    edited_df.to_excel(writer, index=False, sheet_name='Verbatims')
+    
+    st.markdown("---")
+    st.markdown(f"#### 📥 Download Hub ({section_name})")
+    
+    date_str_file = e_date.strftime("%Y_%m_%d")
+    slug = prefix_key.lower()
+    
+    csv_buf = io.StringIO()
+    edited_df.to_csv(csv_buf, sep='|', index=False, encoding='utf-8')
+    csv_bytes = csv_buf.getvalue().encode('utf-8')
+    
+    sav_bytes = b""
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".sav") as tmp_sav:
+        tmp_sav_path = tmp_sav.name
+    try:
+        pyreadstat.write_sav(edited_df, tmp_sav_path)
+        with open(tmp_sav_path, "rb") as fp:
+            sav_bytes = fp.read()
+    except: pass
+    finally:
+        if os.path.exists(tmp_sav_path): os.remove(tmp_sav_path)
+        
+    excel_buf = io.BytesIO()
+    with pd.ExcelWriter(excel_buf, engine='openpyxl') as writer:
+        edited_df.to_excel(writer, index=False, sheet_name='Verbatims')
+        if not df_audit.empty:
+            df_audit.to_excel(writer, index=False, sheet_name='Audit_Log')
+    excel_bytes = excel_buf.getvalue()
+    
+    audit_bytes = b""
     if not df_audit.empty:
-        df_audit.to_excel(writer, index=False, sheet_name='Proofread_Audit_Log')
-excel_bytes = excel_buffer.getvalue()
+        audit_buf = io.StringIO()
+        df_audit.to_csv(audit_buf, index=False, encoding='utf-8')
+        audit_bytes = audit_buf.getvalue().encode('utf-8')
+        
+    d1, d2, d3, d4 = st.columns(4)
+    with d1:
+        st.download_button("📄 Pipe CSV (|)", data=csv_bytes, file_name=f"{slug}_Verbatims_{date_str_file}.csv", mime="text/csv", use_container_width=True, key=f"dl_csv_{prefix_key}")
+    with d2:
+        if sav_bytes:
+            st.download_button("💾 SPSS (.sav)", data=sav_bytes, file_name=f"{slug}_Verbatims_{date_str_file}.sav", mime="application/x-spss-sav", use_container_width=True, key=f"dl_sav_{prefix_key}")
+    with d3:
+        st.download_button("📊 Excel (.xlsx)", data=excel_bytes, file_name=f"{slug}_Verbatims_{date_str_file}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True, key=f"dl_xlsx_{prefix_key}")
+    with d4:
+        if audit_bytes:
+            st.download_button("📝 Audit Log", data=audit_bytes, file_name=f"{slug}_Audit_{date_str_file}.csv", mime="text/csv", use_container_width=True, key=f"dl_audit_{prefix_key}")
 
-audit_bytes = b""
-if not df_audit.empty:
-    audit_csv_buffer = io.StringIO()
-    df_audit.to_csv(audit_csv_buffer, index=False, encoding='utf-8')
-    audit_bytes = audit_csv_buffer.getvalue().encode('utf-8')
+with tab_growth:
+    render_processing_section("Growth / Business", "Growth")
 
-dl_col1, dl_col2, dl_col3, dl_col4 = st.columns(4)
-with dl_col1:
-    st.download_button(
-        label="📄 Pipe CSV (|) [Client]",
-        data=csv_bytes,
-        file_name=csv_filename,
-        mime="text/csv",
-        use_container_width=True
-    )
-with dl_col2:
-    if sav_bytes:
-        st.download_button(
-            label="💾 SPSS (.sav) File",
-            data=sav_bytes,
-            file_name=sav_filename,
-            mime="application/x-spss-sav",
-            use_container_width=True
-        )
-with dl_col3:
-    st.download_button(
-        label="📊 Excel (.xlsx) File",
-        data=excel_bytes,
-        file_name=xlsx_filename,
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        use_container_width=True
-    )
-with dl_col4:
-    if audit_bytes:
-        st.download_button(
-            label="📝 Download Audit Log",
-            data=audit_bytes,
-            file_name=audit_filename,
-            mime="text/csv",
-            use_container_width=True
-        )
+with tab_enterprise:
+    render_processing_section("R10Mil / Enterprise", "Enterprise")
 
-# Footer info
 st.markdown("---")
 st.markdown("""
 <div style="font-size: 0.85rem; color: #64748b; text-align: center;">
-    Growth CATI Wave 22 Automation • Built with Streamlit & Pyreadstat • Exact replication of SPSS Syntax V3 with Failsafe & Smart Casing Proofreader
+    CATI Verbatim Automation Suite • Built with Streamlit & Pyreadstat
 </div>
 """, unsafe_allow_html=True)
